@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Compression Garment Order</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#form">Skip to order form</a>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <span class="brand-mark" aria-hidden="true">CO</span>
+      <h1>Compression Garment Order</h1>
+    </div>
+  </header>
+
+  <main>
+    <section id="errorSummary" class="errors" aria-labelledby="errorTitle" tabindex="-1" hidden>
+      <h2 id="errorTitle">Please complete the following</h2>
+      <ul id="errorList"></ul>
+    </section>
+
+    <form id="form" novalidate>
+      <section class="panel workflow-section" id="patientSection" aria-labelledby="patientHeading">
+        <div class="workflow-heading">
+          <div>
+            <span class="step-label">Step 1</span>
+            <h2 id="patientHeading">Patient Details</h2>
+          </div>
+          <span id="patientStepStatus" class="section-status">Pending</span>
+        </div>
+        <div class="patient-row">
+          <div class="field floating-field" id="field-name">
+            <input id="name" autocomplete="name" placeholder=" " required aria-describedby="name-error">
+            <label for="name">Full Name <span class="required" aria-hidden="true">*</span></label>
+            <p class="field-error" id="name-error"></p>
+          </div>
+
+          <div class="field floating-field" id="field-contact">
+            <input id="contact" type="tel" inputmode="tel" autocomplete="tel" maxlength="30" placeholder=" " required aria-describedby="contact-error">
+            <label for="contact">Contact Number <span class="required" aria-hidden="true">*</span></label>
+            <p class="field-error" id="contact-error"></p>
+          </div>
+
+          <div class="field floating-field" id="field-location">
+            <input id="location" autocomplete="address-level2" maxlength="200" placeholder=" " required aria-describedby="location-error">
+            <label for="location">Location <span class="required" aria-hidden="true">*</span></label>
+            <p class="field-error" id="location-error"></p>
+          </div>
+
+          <div class="field quantity-field" id="field-pairs">
+            <div class="quantity-control">
+              <label for="pairs">QTY <span class="required" aria-hidden="true">*</span></label>
+              <div class="quantity-stepper">
+                <button id="pairsDecrease" class="quantity-button" type="button" aria-label="Decrease quantity">−</button>
+                <input id="pairs" type="number" min="1" max="20" step="1" value="1" required aria-describedby="pairs-error">
+                <button id="pairsIncrease" class="quantity-button" type="button" aria-label="Increase quantity">+</button>
+              </div>
+            </div>
+            <p class="field-error" id="pairs-error"></p>
+          </div>
+
+          <fieldset class="field gender-field" id="field-gender" aria-describedby="gender-error">
+            <legend>Gender <span class="required" aria-hidden="true">*</span> <span class="legend-context">for garment fit</span></legend>
+            <div class="gender-row">
+              <label><input type="radio" name="gender" value="male"> Male</label>
+              <label><input type="radio" name="gender" value="female"> Female</label>
+            </div>
+            <p class="field-error" id="gender-error"></p>
+          </fieldset>
+        </div>
+      </section>
+
+      <div id="selectionRow" class="selection-row">
+      <section class="panel workflow-section garment-section" id="garmentSection" aria-labelledby="garmentHeading">
+        <div class="workflow-heading">
+          <div>
+            <span class="step-label">Step 2</span>
+            <h2 id="garmentHeading">Garment Style</h2>
+          </div>
+          <div class="workflow-heading-actions">
+            <span id="garmentStepStatus" class="section-status">Pending</span>
+            <button id="changeGarment" class="change-garment" type="button" hidden>Change style</button>
+          </div>
+        </div>
+        <div id="garments" class="garments" role="radiogroup" aria-labelledby="garmentHeading" aria-describedby="garment-error"></div>
+        <p class="field-error" id="garment-error"></p>
+      </section>
+
+      <section class="panel workflow-section compression-section" id="compressionSection" aria-labelledby="compressionHeading" hidden>
+        <div class="workflow-heading">
+          <div>
+            <span class="step-label">Step 3</span>
+            <div class="section-heading">
+              <h2 id="compressionHeading">Compression Level</h2>
+              <button class="help-tip" type="button" aria-label="Compression level help" data-tooltip="Choose the prescribed compression level. Use the information button for its clinical reference details.">?</button>
+            </div>
+          </div>
+          <span id="compressionStepStatus" class="section-status">Pending</span>
+        </div>
+        <div id="compression" class="compression" role="radiogroup" aria-labelledby="compressionHeading" aria-describedby="compression-error"></div>
+        <p class="field-error" id="compression-error"></p>
+      </section>
+
+      <section class="panel workflow-section measurement-section" id="measurementSection" aria-labelledby="measurementHeading">
+        <div class="workflow-heading">
+          <div>
+            <span class="step-label">Step 4</span>
+            <h2 id="measurementHeading">Required Measurements</h2>
+          </div>
+          <span id="measurementStepStatus" class="section-status">Waiting for style</span>
+        </div>
+        <p id="measurementHint" class="hint empty-guidance" aria-live="polite">Choose a garment style to see its measurement requirements.</p>
+        <div id="measurementContent" class="measure-content" hidden>
+          <div class="measure-layout">
+            <svg id="measureDiagram" class="body-diagram" viewBox="0 0 150 260" role="img" aria-label="Body measurement locations"></svg>
+            <div id="measurementFields" class="measurements"></div>
+          </div>
+        </div>
+        <p class="field-error" id="measurements-error"></p>
+      </section>
+      </div>
+
+      <section class="panel workflow-section preferences-panel" id="preferencesSection" aria-labelledby="preferencesHeading">
+        <div class="workflow-heading preferences-heading">
+          <div>
+            <span class="step-label">Step 5</span>
+            <h2 id="preferencesHeading">Preferences</h2>
+          </div>
+          <span id="preferencesStepStatus" class="section-status optional-status">Optional</span>
+        </div>
+        <div class="notes-column">
+          <h2 id="notesHeading">Additional Notes</h2>
+          <textarea id="notes" maxlength="2000" rows="4" aria-labelledby="notesHeading"></textarea>
+        </div>
+        <fieldset class="colour-column" aria-describedby="colourHelp">
+          <legend>Colour Priority <span class="optional">(optional)</span></legend>
+          <p id="colourHelp" class="hint">Choose your first, second and third colour preference.</p>
+          <div id="colourSlots" class="colour-slots" aria-label="Selected colour preference order"></div>
+          <div id="colourPriorities" class="colour-priorities"></div>
+          <button id="clearColours" class="clear-colours" type="button" hidden>Clear colours</button>
+          <p id="colourStatus" class="sr-only" aria-live="polite"></p>
+        </fieldset>
+      </section>
+
+      <section class="panel workflow-section completion-panel" id="completionSection" aria-labelledby="completionHeading">
+        <div class="workflow-heading">
+          <div>
+            <span class="step-label">Step 6</span>
+            <h2 id="completionHeading">Review and Send</h2>
+          </div>
+          <span id="completionStepStatus" class="section-status">Not ready</span>
+        </div>
+        <div id="orderSummary" class="order-summary" aria-live="polite"></div>
+        <div class="action-groups">
+          <div class="primary-actions">
+            <button type="button" id="review">Review Order</button>
+            <button type="button" id="whatsapp" class="whatsapp">Open WhatsApp</button>
+          </div>
+          <div class="utility-actions" aria-label="Order utilities">
+            <button type="button" id="print" class="secondary">Print Order</button>
+            <button type="button" id="copy" class="secondary">Copy Order</button>
+            <button type="button" id="save" class="neutral">Save Draft</button>
+            <button type="button" id="clear" class="clear-action">Clear Form</button>
+          </div>
+        </div>
+        <p class="action-help">WhatsApp copies the order details and opens the app with the message ready to send.</p>
+        <p id="draftPrivacy" class="draft-privacy">Save Draft stores patient details only in this browser on this device. Clear Form removes the saved information.</p>
+      </section>
+    </form>
+  </main>
+
+  <footer>This application is a form-recording tool. It does not provide medical advice.</footer>
+
+  <div id="status" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-describedby="modalDescription">
+      <button id="modalClose" class="close" type="button" aria-label="Close dialog">&times;</button>
+      <h2 id="modalTitle"></h2>
+      <div id="modalDescription"></div>
+      <div id="modalActions" class="actions"></div>
+    </div>
+  </div>
+
+  <section id="printArea" aria-label="Printable order"></section>
+
+  <script src="script.js"></script>
+</body>
+</html>

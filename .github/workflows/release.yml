@@ -1,0 +1,40 @@
+name: Release Mercury
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Validate release tag
+        shell: pwsh
+        run: |
+          if ("$env:GITHUB_REF_NAME" -notmatch '^v(\d+\.\d+\.\d+)$') {
+            throw "Release tags must use vMAJOR.MINOR.PATCH."
+          }
+          "RELEASE_VERSION=$($Matches[1])" >> $env:GITHUB_ENV
+      - name: Publish single-file executable
+        shell: pwsh
+        run: dotnet publish .\CompressionGarmentOrder.csproj --configuration Release --runtime win-x64 --self-contained true --output .\dist -p:Version=$env:RELEASE_VERSION -p:AssemblyVersion="$env:RELEASE_VERSION.0" -p:FileVersion="$env:RELEASE_VERSION.0" -p:InformationalVersion=$env:RELEASE_VERSION; Move-Item .\dist\CompressionGarmentOrder.exe .\dist\Mercury.exe
+      - name: Create checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash .\dist\Mercury.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Mercury.exe" | Set-Content .\dist\Mercury.exe.sha256 -Encoding ascii
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$env:GITHUB_REF_NAME" .\dist\Mercury.exe .\dist\Mercury.exe.sha256 --repo "$env:GITHUB_REPOSITORY" --title "Mercury $env:RELEASE_VERSION" --generate-notes --verify-tag
