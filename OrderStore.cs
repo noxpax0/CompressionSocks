@@ -101,7 +101,9 @@ internal sealed class OrderStore
         if (!File.Exists(_path)) return MigrateLegacy();
         try
         {
-            return ReadDatabase(_path);
+            Database database = ReadDatabase(_path);
+            DeleteLegacyPlaintext();
+            return database;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException or JsonException or InvalidDataException)
         {
@@ -148,12 +150,28 @@ internal sealed class OrderStore
             }
             var migrated = new Database(draft, migratedOrders, 2);
             Save(migrated);
-            File.Move(legacyPath, legacyPath + ".migrated", true);
+            _ = ReadDatabase(_path);
+            DeleteLegacyPlaintext();
             return migrated;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
             return new Database(null, [], 2);
+        }
+    }
+
+    private void DeleteLegacyPlaintext()
+    {
+        string directory = Path.GetDirectoryName(_path)!;
+        foreach (string name in new[] { "orders.json", "orders.json.migrated" })
+        {
+            try
+            {
+                string candidate = Path.Combine(directory, name);
+                if (File.Exists(candidate)) File.Delete(candidate);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 
