@@ -39,6 +39,18 @@ try
     store.DiscardDraft();
     Assert(store.GetDraftJson() is null, "Discarding a draft failed.");
 
+    string migrationRoot = Path.Combine(root, "migration");
+    Directory.CreateDirectory(migrationRoot);
+    string legacyPath = Path.Combine(migrationRoot, "orders.json");
+    File.WriteAllText(legacyPath, JsonSerializer.Serialize(new
+    {
+        orders = new[] { new { id = Guid.NewGuid().ToString("N"), savedAt = DateTimeOffset.UtcNow, data = JsonSerializer.Deserialize<JsonElement>(order) } }
+    }));
+    var migratedStore = new OrderStore(migrationRoot);
+    Assert(migratedStore.GetDraftJson()?.Contains(patientName, StringComparison.Ordinal) == true, "Legacy draft migration failed.");
+    Assert(!File.Exists(legacyPath), "Legacy plaintext database was not removed after verified migration.");
+    Assert(File.Exists(Path.Combine(migrationRoot, "orders.dat")), "Encrypted migrated database was not created.");
+
     Console.WriteLine("Mercury tests passed.");
     return 0;
 }
