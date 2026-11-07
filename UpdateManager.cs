@@ -23,6 +23,16 @@ internal static class UpdateManager
 
         ApplicationConfiguration.Initialize();
         string targetPath = Path.GetFullPath(args[2]);
+        string updatesRoot = Path.GetFullPath(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Mercury", "Updates"));
+        string updaterPath = Path.GetFullPath(Environment.ProcessPath!);
+        string trustedUpdatesPrefix = updatesRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!updaterPath.StartsWith(trustedUpdatesPrefix, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(Path.GetExtension(targetPath), ".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowUpdateError("The update location could not be verified.");
+            return true;
+        }
         if (!int.TryParse(args[3], NumberStyles.None, CultureInfo.InvariantCulture, out int oldProcessId))
         {
             ShowUpdateError("The update could not identify the running Mercury process.");
@@ -32,7 +42,7 @@ internal static class UpdateManager
         try
         {
             WaitForProcessToExit(oldProcessId, TimeSpan.FromSeconds(25));
-            ReplaceWithRetries(Environment.ProcessPath!, targetPath, TimeSpan.FromSeconds(20));
+            string? rollbackPath = ReplaceWithRetries(Environment.ProcessPath!, targetPath, TimeSpan.FromSeconds(20));
             var restart = new ProcessStartInfo(targetPath)
             {
                 UseShellExecute = true,
@@ -41,7 +51,14 @@ internal static class UpdateManager
             restart.ArgumentList.Add("--updated-to");
             restart.ArgumentList.Add(args[4]);
             restart.ArgumentList.Add(Environment.ProcessPath!);
-            Process.Start(restart);
+            restart.ArgumentList.Add(rollbackPath ?? string.Empty);
+            using Process restarted = Process.Start(restart)
+                ?? throw new InvalidOperationException("Mercury could not restart after the update.");
+            if (restarted.WaitForExit(10_000) && rollbackPath is not null && File.Exists(rollbackPath))
+            {
+                RestoreRollback(rollbackPath, targetPath, TimeSpan.FromSeconds(10));
+                ShowUpdateError("The updated version did not start correctly, so Mercury restored the previous version.");
+            }
         }
         catch (Exception ex)
         {
@@ -77,13 +94,21 @@ internal static class UpdateManager
 
         _ = Task.Run(async () =>
         {
-            await Task.Delay(1800);
+            await Task.Delay(15_000);
             for (int attempt = 0; attempt < 10; attempt++)
             {
                 try
                 {
                     string? versionDirectory = Path.GetDirectoryName(stagedExecutable);
                     File.Delete(stagedExecutable);
+                    if (args.Length >= 5 && !string.IsNullOrWhiteSpace(args[4]))
+                    {
+                        string rollbackPath = Path.GetFullPath(args[4]);
+                        string expectedDirectory = Path.GetDirectoryName(Environment.ProcessPath!)!;
+                        if (string.Equals(Path.GetDirectoryName(rollbackPath), expectedDirectory, StringComparison.OrdinalIgnoreCase) &&
+                            rollbackPath.EndsWith(".rollback", StringComparison.OrdinalIgnoreCase))
+                            File.Delete(rollbackPath);
+                    }
                     if (versionDirectory is not null)
                         Directory.Delete(versionDirectory, false);
                     if (Directory.Exists(updatesRoot) && !Directory.EnumerateFileSystemEntries(updatesRoot).Any())
@@ -165,7 +190,21 @@ internal static class UpdateManager
                 return;
             }
 
+            if (!AuthenticodeVerifier.IsTrusted(partialPath))
+            {
+                File.Delete(partialPath);
+                owner.BeginInvoke((System.Windows.Forms.MethodInvoker)(() => MessageBox.Show(owner,
+                    "Mercury found an update, but Windows could not verify its publisher. The update was not installed.",
+                    "Mercury Update", MessageBoxButtons.OK, MessageBoxIcon.Warning)));
+                return;
+            }
+
             File.Move(partialPath, stagedPath, true);
+            DialogResult install = MessageBox.Show(owner,
+                $"Mercury {availableVersion.ToString(3)} is ready. Install it now and restart Mercury?",
+                "Mercury Update", MessageBoxButtons.YesNo, MessageBoxIcon.Information,
+                MessageBoxDefaultButton.Button1);
+            if (install != DialogResult.Yes) return;
             string currentExecutable = Environment.ProcessPath ?? throw new InvalidOperationException("Mercury could not locate its executable.");
             var updater = new ProcessStartInfo(stagedPath)
             {
@@ -179,12 +218,10 @@ internal static class UpdateManager
             Process.Start(updater);
             owner.BeginInvoke((System.Windows.Forms.MethodInvoker)Application.Exit);
         }
-        catch (OperationCanceledException) { }
-        catch (HttpRequestException) { }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
-        catch (JsonException) { }
-        catch (InvalidOperationException) { }
+        catch (Exception exception) when (exception is OperationCanceledException or HttpRequestException or IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
+        {
+            DiagnosticsLog.Write("update-check", exception);
+        }
     }
 
     private static HttpClient CreateClient()
@@ -270,13 +307,14 @@ internal static class UpdateManager
         catch (ArgumentException) { }
     }
 
-    private static void ReplaceWithRetries(string sourcePath, string targetPath, TimeSpan timeout)
+    private static string? ReplaceWithRetries(string sourcePath, string targetPath, TimeSpan timeout)
     {
         string targetDirectory = Path.GetDirectoryName(targetPath)
             ?? throw new InvalidOperationException("The Mercury installation folder could not be located.");
         string stagedReplacement = Path.Combine(
             targetDirectory,
             $".{Path.GetFileName(targetPath)}.{Environment.ProcessId}.update");
+        string? rollbackPath = File.Exists(targetPath) ? targetPath + ".rollback" : null;
 
         File.Copy(sourcePath, stagedReplacement, true);
         Exception? lastError = null;
@@ -286,8 +324,9 @@ internal static class UpdateManager
         {
             try
             {
-                File.Move(stagedReplacement, targetPath, true);
-                return;
+                if (rollbackPath is not null) File.Replace(stagedReplacement, targetPath, rollbackPath, true);
+                else File.Move(stagedReplacement, targetPath);
+                return rollbackPath;
             }
             catch (IOException ex) { lastError = ex; }
             catch (UnauthorizedAccessException ex) { lastError = ex; }
@@ -296,6 +335,25 @@ internal static class UpdateManager
 
         try { File.Delete(stagedReplacement); } catch { }
         throw new IOException("The executable could not be replaced.", lastError);
+    }
+
+    private static void RestoreRollback(string rollbackPath, string targetPath, TimeSpan timeout)
+    {
+        Exception? lastError = null;
+        Stopwatch timer = Stopwatch.StartNew();
+        while (timer.Elapsed < timeout)
+        {
+            try
+            {
+                File.Copy(rollbackPath, targetPath, true);
+                File.Delete(rollbackPath);
+                return;
+            }
+            catch (IOException exception) { lastError = exception; }
+            catch (UnauthorizedAccessException exception) { lastError = exception; }
+            Thread.Sleep(300);
+        }
+        throw new IOException("The previous executable could not be restored.", lastError);
     }
 
     private static void ShowUpdateError(string message) =>

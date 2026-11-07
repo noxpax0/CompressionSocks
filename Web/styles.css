@@ -57,6 +57,12 @@ body {
   font: 15px/1.45 "Aptos", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
 }
 
+@media (forced-colors: active) {
+  * { forced-color-adjust: auto; }
+  .panel, button, input, textarea, select, .compression-card, .garment-card { border: 1px solid CanvasText; }
+  :focus-visible { outline: 3px solid Highlight !important; outline-offset: 3px; }
+}
+
 .skip-link {
   position: fixed;
   z-index: 100;

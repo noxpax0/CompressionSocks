@@ -662,7 +662,7 @@ function validateForm() {
   clearAllErrors();
 
   if (!state.patient.name) errors.push({ key: "name", target: "name", message: "Full name is required." });
-  if (!state.patient.contact) errors.push({ key: "contact", target: "contact", message: "Contact number is required." });
+  if ((state.patient.contact.match(/\d/g) || []).length < 5) errors.push({ key: "contact", target: "contact", message: "Enter a valid contact number with at least 5 digits." });
   if (!state.patient.location) errors.push({ key: "location", target: "location", message: "Enter a location." });
   if (!/^(?:[1-9]|1\d|20)$/.test(state.patient.pairs)) errors.push({ key: "pairs", target: "pairs", message: "Quantity must be an integer from 1 to 20." });
   if (!state.patient.gender) errors.push({ key: "gender", target: "field-gender", message: "Select a gender." });
@@ -677,8 +677,8 @@ function validateForm() {
     }
     garment.measurements.forEach(key => {
       const value = Number(state.measurements[key]);
-      if (!Number.isFinite(value) || value <= 0) {
-        errors.push({ key, target: key, message: `${measurementDefinitions[key].label} must be a positive number.` });
+      if (!Number.isFinite(value) || value < 1 || value > 300) {
+        errors.push({ key, target: key, message: `${measurementDefinitions[key].label} must be between 1 and 300 cm.` });
       }
     });
   }
@@ -787,6 +787,16 @@ function reviewResults() {
   preview.setAttribute("aria-label", "Order text preview");
 
   openModal("Review Order", preview, [
+    { label: "Complete Order", action: () => {
+      const state = readFormState();
+      state.orderId = crypto.randomUUID().replaceAll("-", "");
+      state.completedAt = new Date().toISOString();
+      window.chrome?.webview?.postMessage({ kind: "complete-order", value: state });
+      window.__mercuryPendingOrders = [...(window.__mercuryPendingOrders || []), { id: state.orderId, savedAt: state.completedAt, status: "completed", data: state }];
+      localStorage.removeItem(DRAFT_KEY);
+      closeModal();
+      showToast("Order completed and saved securely.");
+    } },
     { label: "Copy Text", action: () => copyText(preview.value) },
     { label: "Print", action: printResults },
     { label: "Edit Form", action: closeModal },
@@ -1007,14 +1017,26 @@ function generateWhatsAppMessage(state, garment) {
   ].join("\n");
 }
 
-async function openWhatsAppMessage() {
+function openWhatsAppMessage() {
   const result = validateWhatsAppDetails();
   if (!result.valid) return;
 
+  const message = generateWhatsAppMessage(result.state, result.garment);
+  const preview = document.createElement("textarea");
+  preview.className = "preview";
+  preview.readOnly = true;
+  preview.value = message;
+  preview.setAttribute("aria-label", "Supplier summary preview");
+  openModal("Review Supplier Summary", preview, [
+    { label: "Send with WhatsApp", action: () => { closeModal(); sendWhatsAppMessage(message); } },
+    { label: "Copy Summary", action: () => copyText(message) },
+    { label: "Cancel", className: "neutral", action: closeModal }
+  ]);
+}
+
+async function sendWhatsAppMessage(message) {
   const actionButton = $("#whatsapp");
   setActionBusy(actionButton, true);
-  const message = generateWhatsAppMessage(result.state, result.garment);
-  const whatsappWindow = window.open("about:blank", "_blank");
 
   try {
     try {
@@ -1024,9 +1046,7 @@ async function openWhatsAppMessage() {
       showToast("WhatsApp opened with the message ready. Clipboard access was unavailable.");
     }
 
-    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    if (whatsappWindow) whatsappWindow.location.replace(whatsappUrl);
-    else window.location.href = whatsappUrl;
+    window.location.href = `whatsapp://send?text=${encodeURIComponent(message)}`;
   } finally {
     setActionBusy(actionButton, false);
   }
@@ -1081,7 +1101,7 @@ function offerDraftRestore() {
 function applyDraft(draft) {
   $("#name").value = capitalizeWords(String(draft.patient.name || "").replace(/[^\p{L}\s'-]/gu, "")).slice(0, 500);
   $("#contact").value = sanitizePhone(String(draft.patient.contact || "")).slice(0, 30);
-  $("#location").value = capitalizeWords(String(draft.patient.location || "").replace(/[^\p{L}\s'.-]/gu, "")).slice(0, 200);
+  $("#location").value = capitalizeWords(String(draft.patient.location || "").replace(/[^\p{L}\p{N}\s'.,#\/-]/gu, "")).slice(0, 200);
   $("#pairs").value = /^(?:[1-9]|1\d|20)$/.test(String(draft.patient.pairs)) ? draft.patient.pairs : "1";
   updatePairButtons();
   const gender = ["male", "female"].includes(draft.patient.gender) ? draft.patient.gender : "";
@@ -1120,6 +1140,7 @@ function requestClearForm() {
 }
 
 function clearForm() {
+  window.chrome?.webview?.postMessage({ kind: "discard-resume" });
   $("#form").reset();
   $("#pairs").value = "1";
   updatePairButtons();
@@ -1263,7 +1284,7 @@ function bindEvents() {
   $("#pairsIncrease").addEventListener("click", () => changePairQuantity(1));
   $("#location").addEventListener("beforeinput", restrictLocationInput);
   $("#location").addEventListener("input", event => {
-    transformInputValue(event.target, value => capitalizeWords(value.replace(/[^\p{L}\s'.-]/gu, "")));
+    transformInputValue(event.target, value => capitalizeWords(value.replace(/[^\p{L}\p{N}\s'.,#\/-]/gu, "")));
     clearError("location");
   });
   $("#notes").addEventListener("input", event => transformInputValue(event.target, capitalizeSentences));
@@ -1293,7 +1314,7 @@ function updatePairButtons() {
 
 function restrictLocationInput(event) {
   if (!event.data || event.inputType.startsWith("delete") || event.inputType === "historyUndo" || event.inputType === "historyRedo") return;
-  if (!/^[\p{L}\s'.-]+$/u.test(event.data)) event.preventDefault();
+  if (!/^[\p{L}\p{N}\s'.,#\/-]+$/u.test(event.data)) event.preventDefault();
 }
 
 function restrictPhoneKeydown(event) {
