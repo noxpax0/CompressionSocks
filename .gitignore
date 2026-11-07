@@ -1,7 +1,10 @@
 bin/
 obj/
-publish*/
-dist*/
-*.user
-*.suo
+dist/
 .vs/
+*.user
+*.pfx
+*.snk
+*.key
+*.pem
+TestResults/

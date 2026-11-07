@@ -7,17 +7,19 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
     runs-on: windows-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
-      - name: Set up .NET 8
-        uses: actions/setup-dotnet@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.x"
       - name: Validate release tag
         shell: pwsh
         run: |
@@ -28,11 +30,35 @@ jobs:
       - name: Publish single-file executable
         shell: pwsh
         run: dotnet publish .\CompressionGarmentOrder.csproj --configuration Release --runtime win-x64 --self-contained true --output .\dist -p:Version=$env:RELEASE_VERSION -p:AssemblyVersion="$env:RELEASE_VERSION.0" -p:FileVersion="$env:RELEASE_VERSION.0" -p:InformationalVersion=$env:RELEASE_VERSION; Move-Item .\dist\CompressionGarmentOrder.exe .\dist\Mercury.exe
+      - name: Run encrypted storage tests
+        shell: pwsh
+        run: dotnet run --project .\Mercury.Tests\Mercury.Tests.csproj --configuration Release
+      - name: Authenticode sign executable
+        shell: pwsh
+        env:
+          SIGNING_CERTIFICATE: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_CERTIFICATE) -or [string]::IsNullOrWhiteSpace($env:SIGNING_PASSWORD)) {
+            throw "Trusted Windows signing secrets are required for a production release."
+          }
+          $certificate = Join-Path $env:RUNNER_TEMP "mercury-signing.pfx"
+          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:SIGNING_CERTIFICATE))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw "signtool.exe was not found." }
+          & $signtool.FullName sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $certificate /p $env:SIGNING_PASSWORD .\dist\Mercury.exe
+          if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed." }
+          & $signtool.FullName verify /pa /v .\dist\Mercury.exe
+          if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed." }
       - name: Create checksum
         shell: pwsh
         run: |
           $hash = (Get-FileHash .\dist\Mercury.exe -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  Mercury.exe" | Set-Content .\dist\Mercury.exe.sha256 -Encoding ascii
+      - name: Attest release executable
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-path: .\dist\Mercury.exe
       - name: Publish GitHub release
         shell: pwsh
         env:
